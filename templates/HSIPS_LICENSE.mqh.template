@@ -1,0 +1,559 @@
+#ifndef HSIPS_LICENSE_MQH
+#define HSIPS_LICENSE_MQH
+
+// ==========================================================
+// HS_IP_PS License Runtime Module
+// Generated from template. Do not edit inside source_work.
+// Encryption = XOR keystream built on HSIPS_Hash256 (identical to Python).
+// No DLL, no external AES, pure MQL5.
+// ==========================================================
+
+#define HSIPS_PRODUCT_CODE "__PRODUCT_CODE__"
+#define HSIPS_PRODUCT_VERSION "__PRODUCT_VERSION__"
+
+#define HSIPS_FLAG_ALLOW_DEMO          1
+#define HSIPS_FLAG_ALLOW_LIVE          2
+#define HSIPS_FLAG_ALLOW_TESTER        4
+#define HSIPS_FLAG_ALLOW_OPTIMIZATION  8
+#define HSIPS_FLAG_SERVER_BOUND        16
+#define HSIPS_FLAG_BROKER_BOUND        32
+#define HSIPS_FLAG_EXPIRY_REQUIRED     64
+
+const uchar HSIPS_PRODUCT_UUID[] = {__PRODUCT_UUID_BYTES__};
+
+const uchar HSIPS_SECRET_A[] = {__SECRET_A__};
+const uchar HSIPS_SECRET_B[] = {__SECRET_B__};
+const uchar HSIPS_SECRET_C[] = {__SECRET_C__};
+const uchar HSIPS_SECRET_D[] = {__SECRET_D__};
+
+bool HSIPS_G_VALID = false;
+string HSIPS_G_MESSAGE = "HS_IP_PS: LICENSE INVALID";
+datetime HSIPS_G_LAST_CHECK = 0;
+
+// ------------------------------------------------------------
+// Utility functions
+// ------------------------------------------------------------
+
+ulong HSIPS_Rotl64(const ulong x, const int r)
+{
+   if(r <= 0)
+      return x;
+
+   if(r >= 64)
+      return x;
+
+   return (x << r) | (x >> (64 - r));
+}
+
+void HSIPS_UlongToLE(const ulong value, uchar &out[], const int offset)
+{
+   for(int i = 0; i < 8; i++)
+   {
+      out[offset + i] = (uchar)((value >> (8 * i)) & 0xFF);
+   }
+}
+
+ulong HSIPS_ReadU64(const uchar &data[], const int offset)
+{
+   ulong value = 0;
+
+   for(int i = 7; i >= 0; i--)
+   {
+      value = (value << 8) | (ulong)data[offset + i];
+   }
+
+   return value;
+}
+
+uint HSIPS_ReadU32(const uchar &data[], const int offset)
+{
+   uint value = 0;
+
+   for(int i = 3; i >= 0; i--)
+   {
+      value = (value << 8) | (uint)data[offset + i];
+   }
+
+   return value;
+}
+
+// ------------------------------------------------------------
+// HS_IP_PS integrity hash (256-bit). MUST stay identical to Python.
+// ------------------------------------------------------------
+
+void HSIPS_Hash256(const uchar &data[], uchar &out[])
+{
+   ulong l0 = (ulong)0x9E3779B97F4A7C15;
+   ulong l1 = (ulong)0xC2B2AE3D27D4EB4F;
+   ulong l2 = (ulong)0x165667B19E3779F9;
+   ulong l3 = (ulong)0x27D4EB2F165667C5;
+
+   const ulong p0 = (ulong)0x100000001B3;
+   const ulong p1 = (ulong)0xC2B2AE3D27D4EB4F;
+   const ulong p2 = (ulong)0x9E3779B97F4A7C15;
+   const ulong p3 = (ulong)0x84222325CBF29CE7;
+
+   const int total = ArraySize(data);
+
+   for(int i = 0; i < total; i++)
+   {
+      ulong b = (ulong)data[i];
+
+      l0 = (l0 ^ b) * p0;
+      l1 = (l1 ^ ((b + 0x9E) & 0xFF)) * p1;
+      l2 = (l2 ^ ((b + 0xC2) & 0xFF)) * p2;
+      l3 = (l3 ^ ((b + 0x7F) & 0xFF)) * p3;
+
+      ulong t = l0 + l1 + l2 + l3;
+
+      l0 ^= HSIPS_Rotl64(t, 13);
+      l1 ^= HSIPS_Rotl64(t, 29);
+      l2 ^= HSIPS_Rotl64(t, 41);
+      l3 ^= HSIPS_Rotl64(t, 53);
+   }
+
+   for(int round = 0; round < 64; round++)
+   {
+      ulong x = l0 + l1;
+      ulong y = l2 + l3;
+
+      l0 = HSIPS_Rotl64(l0 ^ x, 17) + y;
+      l1 = HSIPS_Rotl64(l1 ^ y, 23) + x;
+      l2 = HSIPS_Rotl64(l2 ^ x, 31) + y;
+      l3 = HSIPS_Rotl64(l3 ^ y, 37) + x;
+   }
+
+   ArrayResize(out, 32);
+
+   HSIPS_UlongToLE(l0, out, 0);
+   HSIPS_UlongToLE(l1, out, 8);
+   HSIPS_UlongToLE(l2, out, 16);
+   HSIPS_UlongToLE(l3, out, 24);
+}
+
+// ------------------------------------------------------------
+// Secret reconstruction
+// ------------------------------------------------------------
+
+void HSIPS_GetSecret(uchar &secret[])
+{
+   const int secret_size = 32;
+
+   ArrayResize(secret, secret_size);
+
+   for(int i = 0; i < secret_size; i++)
+   {
+      secret[i] = (uchar)(
+         HSIPS_SECRET_A[i] ^
+         HSIPS_SECRET_B[i] ^
+         HSIPS_SECRET_C[i] ^
+         HSIPS_SECRET_D[i]
+      );
+   }
+}
+
+// ------------------------------------------------------------
+// Key derivation (server encoded as UTF-8, identical to Python)
+// ------------------------------------------------------------
+
+void HSIPS_DeriveKey(const ulong login, const string server, uchar &key[])
+{
+   uchar secret[];
+   HSIPS_GetSecret(secret);
+
+   uchar server_bytes[];
+   const int server_len = StringLen(server);
+
+   if(server_len > 0)
+      StringToCharArray(server, server_bytes, 0, server_len, CP_UTF8);
+   else
+      ArrayResize(server_bytes, 0);
+
+   const int secret_size = ArraySize(secret);
+   const int uuid_size = ArraySize(HSIPS_PRODUCT_UUID);
+   const int login_size = 8;
+   const int server_size = ArraySize(server_bytes);
+
+   const int total = secret_size + uuid_size + login_size + server_size;
+
+   uchar buffer[];
+   ArrayResize(buffer, total);
+
+   int pos = 0;
+
+   ArrayCopy(buffer, secret, pos, 0, secret_size);
+   pos += secret_size;
+
+   ArrayCopy(buffer, HSIPS_PRODUCT_UUID, pos, 0, uuid_size);
+   pos += uuid_size;
+
+   HSIPS_UlongToLE(login, buffer, pos);
+   pos += login_size;
+
+   if(server_size > 0)
+   {
+      ArrayCopy(buffer, server_bytes, pos, 0, server_size);
+   }
+
+   HSIPS_Hash256(buffer, key);
+}
+
+// ------------------------------------------------------------
+// Stream cipher: XOR keystream built from HSIPS_Hash256(key || counter)
+// Symmetric (encrypt == decrypt). Identical to Python hsips_stream_xor.
+// ------------------------------------------------------------
+
+void HSIPS_StreamXor(const uchar &key[], const uchar &data[], uchar &output[])
+{
+   const int total = ArraySize(data);
+
+   ArrayResize(output, total);
+
+   uchar block_input[];
+   ArrayResize(block_input, 36);
+
+   for(int blk = 0; blk * 16 < total; blk++)
+   {
+      for(int j = 0; j < 32; j++)
+         block_input[j] = key[j];
+
+      block_input[32] = (uchar)(blk & 0xFF);
+      block_input[33] = (uchar)((blk >> 8)  & 0xFF);
+      block_input[34] = (uchar)((blk >> 16) & 0xFF);
+      block_input[35] = (uchar)((blk >> 24) & 0xFF);
+
+      uchar h[];
+      HSIPS_Hash256(block_input, h);
+
+      const int base = blk * 16;
+
+      for(int k = 0; k < 16 && (base + k) < total; k++)
+         output[base + k] = (uchar)(data[base + k] ^ h[k]);
+   }
+}
+
+// ------------------------------------------------------------
+// Binary helpers
+// ------------------------------------------------------------
+
+string HSIPS_BytesToString(const uchar &data[], const int offset, const int max_len)
+{
+   int len = 0;
+
+   while(len < max_len && data[offset + len] != 0)
+   {
+      len++;
+   }
+
+   if(len <= 0)
+      return "";
+
+   return CharArrayToString(data, offset, len);
+}
+
+bool HSIPS_ReadFileBytes(const string path, uchar &data[])
+{
+   const int handle = FileOpen(path, FILE_READ | FILE_BIN);
+
+   if(handle == INVALID_HANDLE)
+      return false;
+
+   const int size = (int)FileSize(handle);
+
+   ArrayResize(data, size);
+
+   const int read = (int)FileReadArray(handle, data);
+
+   FileClose(handle);
+
+   return read == size;
+}
+
+bool HSIPS_SameBytes(const uchar &a[], const int a_offset, const uchar &b[], const int b_offset, const int len)
+{
+   for(int i = 0; i < len; i++)
+   {
+      if(a[a_offset + i] != b[b_offset + i])
+         return false;
+   }
+
+   return true;
+}
+
+// ------------------------------------------------------------
+// Clock rollback protection
+// ------------------------------------------------------------
+
+bool HSIPS_CheckClock(const ulong current_time, const ulong tolerance_seconds)
+{
+   FolderCreate("HS_IP_PS");
+
+   uchar secret[];
+   HSIPS_GetSecret(secret);
+
+   const string path = "HS_IP_PS\\clock.bin";
+
+   uchar stored[];
+
+   if(HSIPS_ReadFileBytes(path, stored))
+   {
+      if(ArraySize(stored) < 40)
+         return false;
+
+      const int check_size = 8 + ArraySize(secret);
+
+      uchar check[];
+      ArrayResize(check, check_size);
+
+      ArrayCopy(check, stored, 0, 0, 8);
+      ArrayCopy(check, secret, 8, 0, ArraySize(secret));
+
+      uchar hash[];
+      HSIPS_Hash256(check, hash);
+
+      if(!HSIPS_SameBytes(hash, 0, stored, 8, 32))
+         return false;
+
+      const ulong last_time = HSIPS_ReadU64(stored, 0);
+
+      if(current_time + tolerance_seconds < last_time)
+         return false;
+   }
+
+   uchar new_data[40];
+
+   HSIPS_UlongToLE(current_time, new_data, 0);
+
+   uchar check[];
+   ArrayResize(check, 8 + ArraySize(secret));
+
+   ArrayCopy(check, new_data, 0, 0, 8);
+   ArrayCopy(check, secret, 8, 0, ArraySize(secret));
+
+   uchar hash[];
+   HSIPS_Hash256(check, hash);
+
+   ArrayCopy(new_data, hash, 8, 0, 32);
+
+   const int handle = FileOpen(path, FILE_WRITE | FILE_BIN);
+
+   if(handle == INVALID_HANDLE)
+      return true;
+
+   FileWriteArray(handle, new_data);
+   FileClose(handle);
+
+   return true;
+}
+
+// ------------------------------------------------------------
+// Payload validation
+// ------------------------------------------------------------
+
+bool HSIPS_ParsePayload(const uchar &payload[], const ulong login, const string server, const string broker)
+{
+   if(ArraySize(payload) < 256)
+      return false;
+
+   if(payload[0] != 'P' || payload[1] != 'L' || payload[2] != '1' || payload[3] != 0)
+      return false;
+
+   if(!HSIPS_SameBytes(payload, 24, HSIPS_PRODUCT_UUID, 0, 16))
+      return false;
+
+   uchar head[];
+   ArrayResize(head, 216);
+   ArrayCopy(head, payload, 0, 0, 216);
+
+   uchar hash[];
+   HSIPS_Hash256(head, hash);
+
+   if(!HSIPS_SameBytes(hash, 0, payload, 216, 32))
+      return false;
+
+   const uint flags = HSIPS_ReadU32(payload, 68);
+   const ulong expiry = HSIPS_ReadU64(payload, 48);
+   const ulong license_login = HSIPS_ReadU64(payload, 56);
+
+   const string license_server = HSIPS_BytesToString(payload, 72, 64);
+   const string license_broker = HSIPS_BytesToString(payload, 136, 64);
+
+   if((bool)MQLInfoInteger(MQL_TESTER))
+   {
+      if((flags & HSIPS_FLAG_ALLOW_TESTER) == 0)
+         return false;
+   }
+
+   if((bool)MQLInfoInteger(MQL_OPTIMIZATION))
+   {
+      if((flags & HSIPS_FLAG_ALLOW_OPTIMIZATION) == 0)
+         return false;
+   }
+
+   if(license_login != 0 && license_login != login)
+      return false;
+
+   if((flags & HSIPS_FLAG_SERVER_BOUND) != 0 && license_server != "")
+   {
+      if(StringCompare(server, license_server, false) != 0)
+         return false;
+   }
+
+   if((flags & HSIPS_FLAG_BROKER_BOUND) != 0 && license_broker != "")
+   {
+      if(StringCompare(broker, license_broker, false) != 0)
+         return false;
+   }
+
+   const ENUM_ACCOUNT_TRADE_MODE trade_mode =
+      (ENUM_ACCOUNT_TRADE_MODE)AccountInfoInteger(ACCOUNT_TRADE_MODE);
+
+   if(trade_mode == ACCOUNT_TRADE_MODE_DEMO)
+   {
+      if((flags & HSIPS_FLAG_ALLOW_DEMO) == 0)
+         return false;
+   }
+
+   if(trade_mode == ACCOUNT_TRADE_MODE_REAL)
+   {
+      if((flags & HSIPS_FLAG_ALLOW_LIVE) == 0)
+         return false;
+   }
+
+   ulong now = (ulong)TimeGMT();
+
+   if(now == 0)
+      now = (ulong)TimeCurrent();
+
+   if((flags & HSIPS_FLAG_EXPIRY_REQUIRED) != 0 || expiry != 0)
+   {
+      if(expiry != 0 && now > expiry)
+         return false;
+   }
+
+   const ulong tolerance_seconds = 12 * 3600;
+
+   if(!HSIPS_CheckClock(now, tolerance_seconds))
+      return false;
+
+   return true;
+}
+
+// ------------------------------------------------------------
+// License file validation
+// ------------------------------------------------------------
+
+bool HSIPS_TryLicenseFile(const uchar &file_data[], const ulong login, const string server, const string broker)
+{
+   if(ArraySize(file_data) < 264)
+      return false;
+
+   if(file_data[0] != 'H' || file_data[1] != 'S' || file_data[2] != 'P' || file_data[3] != 'L')
+      return false;
+
+   const uint version = HSIPS_ReadU32(file_data, 4);
+
+   if(version != 1)
+      return false;
+
+   uchar encrypted[];
+   ArrayResize(encrypted, 256);
+   ArrayCopy(encrypted, file_data, 0, 8, 256);
+
+   uchar key[];
+   HSIPS_DeriveKey(login, server, key);
+
+   uchar payload[];
+   HSIPS_StreamXor(key, encrypted, payload);
+
+   return HSIPS_ParsePayload(payload, login, server, broker);
+}
+
+bool HSIPS_LoadLicense()
+{
+   FolderCreate("HS_IP_PS");
+
+   const ulong login = (ulong)AccountInfoInteger(ACCOUNT_LOGIN);
+   const string server = AccountInfoString(ACCOUNT_SERVER);
+   const string broker = AccountInfoString(ACCOUNT_COMPANY);
+
+   string filename = "";
+
+   const long search = FileFindFirst("HS_IP_PS\\*.lic", filename);
+
+   if(search == INVALID_HANDLE)
+      return false;
+
+   bool valid = false;
+
+   do
+   {
+      if(StringFind(filename, ".lic") >= 0)
+      {
+         uchar file_data[];
+
+         if(HSIPS_ReadFileBytes("HS_IP_PS\\" + filename, file_data))
+         {
+            if(HSIPS_TryLicenseFile(file_data, login, server, broker))
+            {
+               valid = true;
+               break;
+            }
+         }
+      }
+   }
+   while(FileFindNext(search, filename));
+
+   FileFindClose(search);
+
+   return valid;
+}
+
+// ------------------------------------------------------------
+// Public HS_IP_PS license API
+// ------------------------------------------------------------
+
+void HSIPS_LICENSE_Init()
+{
+   HSIPS_G_VALID = false;
+   HSIPS_G_MESSAGE = "HS_IP_PS: LICENSE INVALID";
+
+   if(HSIPS_LoadLicense())
+   {
+      HSIPS_G_VALID = true;
+      HSIPS_G_MESSAGE = "HS_IP_PS: LICENSE OK";
+   }
+
+   HSIPS_G_LAST_CHECK = TimeCurrent();
+
+   Comment(HSIPS_G_MESSAGE);
+}
+
+bool HSIPS_LICENSE_IsValid()
+{
+   return HSIPS_G_VALID;
+}
+
+bool HSIPS_LICENSE_AllowTick()
+{
+   if(!HSIPS_G_VALID)
+      return false;
+
+   const datetime now = TimeCurrent();
+
+   if(now - HSIPS_G_LAST_CHECK > 900)
+   {
+      HSIPS_G_VALID = HSIPS_LoadLicense();
+      HSIPS_G_LAST_CHECK = now;
+
+      if(!HSIPS_G_VALID)
+      {
+         HSIPS_G_MESSAGE = "HS_IP_PS: LICENSE INVALID";
+         Comment(HSIPS_G_MESSAGE);
+      }
+   }
+
+   return HSIPS_G_VALID;
+}
+
+#endif

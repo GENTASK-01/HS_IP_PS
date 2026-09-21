@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "updated_utc": "2026-08-13T00:00:00Z",
+  "compile": {
+    "metaeditor_timeout_seconds": 300,
+    "fail_on_compile_error": true,
+    "max_warnings": 0,
+    "fail_if_warnings_exceed_limit": true,
+    "clean_source_work_before_build": true,
+    "clean_include_work_before_build": true,
+    "require_entry_file": true,
+    "require_product_config": true,
+    "require_intake_report": true
+  },
+  "protection": {
+    "obfuscation_enabled": true,
+    "string_encryption_enabled": true,
+    "resource_encryption_enabled": true,
+    "anti_tamper_enabled": true,
+    "license_module_enabled": true,
+    "environment_binding_enabled": true,
+    "preserve_obfuscation_map_private": true
+  },
+  "output": {
+    "hash_algorithm": "SHA256",
+    "generate_build_id": true,
+    "generate_manifest": true,
+    "generate_changelog_stub": true,
+    "package_format": "zip",
+    "encrypted_package_format": "rar"
+  },
+  "distribution": {
+    "include_source": false,
+    "include_mqh": false,
+    "include_scripts": false,
+    "include_private_keys": false,
+    "include_public_keys": false,
+    "include_logs": false,
+    "include_audit": false,
+    "include_obfuscation_maps": false,
+    "include_customer_docs": true,
+    "include_checksums": true,
+    "include_license_template": true
+  },
+  "safety": {
+    "allowed_write_root": "E:\\HS_IP_PS",
+    "block_c_drive_write": true,
+    "block_network_required": true,
+    "block_paid_services": true
+  }
+}
